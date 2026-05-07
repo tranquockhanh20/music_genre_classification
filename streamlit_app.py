@@ -110,7 +110,7 @@ def home():
         - **Training Accuracy**: 99.7%
         - **Validation Accuracy**: 96.37%     
         - **Test Accuracy**: 96.03%
-        - **Input Shape**: 150×150×1 (Mel-spectrograms)
+        - **Input**: Mel spectrograms
         - **Sampling Rate**: 44.1 kHz
         """)
     st.divider()

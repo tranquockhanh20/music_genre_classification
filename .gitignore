@@ -56,14 +56,14 @@ env/
 
 # Large data files and models
 genres_original/
-music_test/
+# music_test/
 *.mp3
 *.wav
 *.flac
 *.ogg
 *.m4a
 model.keras
-model_v2.keras
+# model_v2.keras (uncommenting to allow commit)
 labels.npy
 training_history.json
 

@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow.image import resize
 import pandas as pd
 import os
+import io
 import matplotlib.pyplot as plt
 import plotly.express as px 
 import plotly.graph_objects as go
@@ -39,7 +40,16 @@ model = load_model()
 #load and preprocess audio file
 def load_and_preprocess_audio(file_path, target_shape=(150,150)):
     data =[]
-    audio_data, sample_rate = librosa.load(file_path, sr= 44100)
+    audio_data, sample_rate = librosa.load(file_path, sr= 22050)
+
+    #cut the silence at the beginning and end of the audio
+    audio_data, _ = librosa.effects.trim(audio_data)
+    #cut 10s at the beginning and end of the audio to avoid noise
+    trim_sec = 10 
+    trim_samples = trim_sec * sample_rate
+    if len(audio_data) > 2 * trim_samples:
+        audio_data = audio_data[trim_samples : -trim_samples] 
+
     #performing preprocessing
     # Define the duration of each chunk and overlap
     chunk_duration = 4  # duration of each chunk in seconds
@@ -56,6 +66,8 @@ def load_and_preprocess_audio(file_path, target_shape=(150,150)):
         end = start + chunk_samples
         #extra the chunk audio
         chunk = audio_data[start:end]
+        if len(chunk) != chunk_samples: 
+            continue
         mel_spectrogram = librosa.feature.melspectrogram(y=chunk, sr=sample_rate)
         #convert to decibels (log scale)
         mel_spectrogram_db = librosa.power_to_db(mel_spectrogram, ref=np.max)
@@ -72,7 +84,7 @@ def predict_genre(model,x_test):
     mean_probs = np.mean(y_pred, axis=0)        
     pred_class_idx = np.argmax(mean_probs)    
     return pred_class_idx,mean_probs
-
+               
 ## Main Page
 def home():
     st.title("🎵 Music Genre Classifier")
@@ -94,7 +106,7 @@ def home():
         - 🌴 Reggae
         - 🎸 Rock                  
         ### How it works:
-        1. **Upload** an audio file (MP3 or WAV format)
+        1. **Upload** maximum 10 audio files (MP3 or WAV format)
         2. **Preprocessing** converts audio to Mel-spectrogram features
         3. **Prediction** runs through trained CNN model
         4. **Results** show predicted genre with confidence scores
@@ -111,7 +123,7 @@ def home():
         - **Validation Accuracy**: 96.37%     
         - **Test Accuracy**: 96.03%
         - **Input**: Mel spectrograms
-        - **Sampling Rate**: 44.1 kHz
+        - **Sampling Rate**: 22.05 kHz
         """)
     st.divider()
 
@@ -134,11 +146,11 @@ def about():
     - **Deployment**: Streamlit Cloud
 
     #### Features
-    1. Single file prediction with confidence scores
-    2. Audio visualization (mel spectrogram)
-    3. Comprehensive analytics 
-    4. Model performance metrics
-    5. Dataset statistics
+    1. Allows uploading multiple audio files (up to 10)
+    2. Real-time genre prediction with confidence scores            
+    3. The result returned is a table with complete information.
+    4. Comprehensive analytics
+    5. Model performance metrics
     6. Downloadable results
 
     #### How to Use
@@ -152,7 +164,7 @@ def about():
     - WAV (Waveform Audio)
 
     #### Limitations & Future Work
-    - **Maximum Batch Size**: 1 file
+    - **Maximum Batch Size**: 10 files per prediction to ensure performance and accuracy
     - **Recording**: No direct audio recording from the system yet
     - **Future**: Allows simultaneous loading of multiple files, enables audio recording, 
                 real-time model monitoring, and custom model fine-tuning
@@ -164,56 +176,74 @@ def prediction():
     #create folder if not exist to save uploaded files
     if not os.path.exists("./music_test"):
         os.makedirs("./music_test")
-    test = st.file_uploader("Choose an audio file", type=["mp3", "wav"],label_visibility="collapsed")
-    if test is not None:
+   
+    if "file_uploader_key" not in st.session_state:
+        st.session_state["file_uploader_key"] = 0
+    def clear_files():
+        st.session_state["file_uploader_key"] += 1
+        st.rerun()
+    uploaded_files = st.file_uploader("Choose audio files (maximum 10)", type=["wav", "mp3"], 
+                accept_multiple_files=True,key=f"uploader_{st.session_state['file_uploader_key']}")
+    if uploaded_files:
+        num_files = len(uploaded_files)
+        if num_files > 10:
+            st.warning(f"⚠️You have uploaded {num_files} files. The system will only process the first 10 files according to the regulations.")
+            files_to_process = uploaded_files[:10]
+        else:
+            files_to_process = uploaded_files
         # Save uploaded file to disk for processing
-        filepath = "./music_test/" + test.name
-        with open(filepath, "wb") as f:
-            f.write(test.getbuffer())
-        # Display audio player
-        st.audio(test, format="audio/mp3" if test.name.endswith('.mp3') else "audio/wav")
-    else:
-        st.warning("Please upload an audio file to proceed with prediction.")
-        return
-    
-     # Display results
-    if(st.button("Predict")):
-        with st.spinner("Analyzing audio..."):       
-            audio_data = load_and_preprocess_audio(filepath)
-            pred_class_idx, mean_probs = predict_genre(model,audio_data)
+        for file in uploaded_files:
+            filepath = "./music_test/" + file.name
+            with open(filepath, "wb") as f:
+                f.write(file.getbuffer())
+        for i, file in enumerate(files_to_process):  
+            st.markdown(f"File {i+1}: {file.name}")     
+            st.audio(file, format="audio/mp3" if file.name.endswith('.mp3') else "audio/wav")
 
-        st.subheader("**Predicted Genre: **:red[{}]** " \
-        "with percentage: :red[{:.2f}%]**".format(classes[pred_class_idx].upper(), mean_probs[pred_class_idx]*100))
-        st.divider()
-        
-        # Visualizations
-        st.subheader("Confidence Distribution")
-        #post data into pandas dataframe for plotly better read
-        df = pd.DataFrame({
-            'Genre': classes,
-            'Confidence (%)': (mean_probs*100).round(2)
-            })
-        #sort dataframe to show the most confident genre at the top
-        df = df.sort_values(by='Confidence (%)', ascending=False)
-        #create pie chart using plotly express
-        fig = px.pie(df, names='Genre', values='Confidence (%)', 
-                     title='Genre Prediction Confidence Breakdown',
-                     color_discrete_sequence=px.colors.qualitative.Set3)
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
-        st.divider()
-              
-        # Audio visualizations
-        #show processed mel-spectrogram from audio_data[0]    
-        st.subheader("Mel-Spectrogram (first 5 Chunk)")
-        for i in range(0,5):
-            fig = plt.figure(figsize=(10,4))
-            mel_spec = audio_data[i].squeeze() #remove channel dimension
-            librosa.display.specshow(mel_spec, sr=44100, x_axis='time', y_axis='mel')
-            plt.colorbar(format='%2.0f dB')
-            plt.tight_layout()
-            st.pyplot(fig)
+        if st.button("Predict"):
+            all_results = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
                 
+            for i, file in enumerate(files_to_process):
+                status_text.text(f" processing file {i+1}/{len(files_to_process)}: {file.name}")
+                try:
+                    features = load_and_preprocess_audio(file) 
+                    idx, probs = predict_genre(model, features)
+                    top_3_idx = np.argsort(probs)[-3:][::-1]
+                    top_3 = "\n".join([f"{i+1}. {classes[idx]} ({probs[idx]*100:.2f}%)" for i, idx in enumerate(top_3_idx)])
+                    all_results.append({
+                            "STT": i + 1,
+                            "File name": file.name,
+                            "Predicted Genre": classes[idx],
+                            "Confidence": f"{np.max(probs)*100:.2f}%",
+                            "Top 3 Predictions": top_3
+                        })
+                except Exception as e:
+                    st.error(f"Error processing {file.name}: {e}")
+
+                progress_bar.progress((i + 1) / len(files_to_process))
+
+            # Display results in a table
+            st.subheader("Results Summary")
+            df = pd.DataFrame(all_results)
+            if not df.empty:
+                st.dataframe(df, hide_index=True, use_container_width=True) 
+            else:
+                st.info(" No valid results to display.")
+
+            # Provide download option for results as CSV
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                    label="Download Prediction Results (.CSV)",
+                    data=csv,
+                    file_name='prediction_results.csv',
+                    mime='text/csv',
+                )
+        if st.button("Clear all files"):
+            clear_files()    
+        
+
 def analytics():
     st.title("📊 Model Analytics & Dataset Info")
     # Get information
@@ -231,7 +261,7 @@ def analytics():
     with col2:
         st.metric("Number of Genres", 10)
     with col3:
-        st.metric("Sampling Rate", f"44100Hz")
+        st.metric("Sampling Rate", f"22050Hz")
     with col4:
         st.metric("Audio Chunk Size", f"4s")
     st.divider()
@@ -280,7 +310,7 @@ def analytics():
     - **Regularization**: Dropout (0.3-0.5), Early Stopping
 
     ### Processing Pipeline
-    1. **Audio Loading**: Librosa (44.1 kHz sampling rate)
+    1. **Audio Loading**: Librosa (22.05 kHz sampling rate)
     2. **Chunking**: 4-second chunks with 2-second overlap
     3. **Feature Extraction**: Mel-spectrogram (128 bands)
     4. **Preprocessing**: Zero-centered normalization
@@ -290,7 +320,7 @@ def analytics():
     - **Optimizer**: Adam (learning rate: 0.0001)
     - **Loss**: Categorical Cross-Entropy
     - **Metrics**: Accuracy
-    - **Data Split**: 60% training, 20% validation, 20% test
+    - **Data Split**: 64% training, 16% validation, 20% test
     - **Augmentation**: Horizontal flip
     """)
 

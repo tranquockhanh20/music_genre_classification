@@ -107,15 +107,18 @@ def home():
         - 🎸 Rock                  
         ### How it works:
         1. **Upload** maximum 10 audio files (MP3 or WAV format)
-        2. **Preprocessing** converts audio to Mel-spectrogram features
-        3. **Prediction** runs through trained CNN model
-        4. **Results** show predicted genre with confidence scores
+        2. **Preprocessing** Raw audio signals are transformed into Mel-spectrograms, a sophisticated time-frequency representation that aligns with human auditory perception.
+        3. **Feature Extraction** A Convolutional Neural Network (CNN) scans these spectrograms to identify distinctive rhythmic patterns and timbral characteristics (Acoustic Signatures).
+        4. **Classification**The final Fully Connected layers calculate probability distributions across 10 categories to output the Top 3 most likely genres.
         ### Advantages of the project
         - **Accuracy:** The system utilizes the most modern deep learning models to accurately predict genres.
         - **User-friendly:** Simple and intuitive interface for a smooth user experience.
         - **Fast and efficient:** Get results quickly, allowing for faster music classification and discovery.
         """)
     with col2:
+        st.write("""The system is powered by a **Convolutional Neural Network (CNN)** architecture. 
+            Instead of processing raw audio directly, the AI 'visualizes' the **Mel-spectrogram** 
+            of the track to make predictions based on unique **acoustic patterns** and spectral features.""")
         st.info("""
         ### Quick Stats
         - **Model**: CNN (4 Conv blocks)
